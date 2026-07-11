@@ -82,17 +82,18 @@
 
 /* ===== 落款 seal (identity) ===== */
 .seal {
-  position:absolute; right:26px; bottom:24px; z-index:10; display:flex; align-items:center; gap:12px;
-  opacity:0; transform:translateY(8px); transition:opacity 1s ease 1s, transform 1s ease 1s;
+  position:absolute; right:28px; bottom:26px; z-index:12; display:flex; align-items:center; gap:14px;
+  padding:8px 12px; border-radius:8px; background:rgba(236,231,217,.4); backdrop-filter:blur(3px);
+  opacity:0; transform:translateY(8px); transition:opacity .8s ease .3s, transform .8s ease .3s;
 }
 #ink-world.live .seal { opacity:1; transform:translateY(0); }
 .seal .stamp {
-  width:46px; height:46px; line-height:46px; text-align:center; color:#fff; background:var(--seal);
-  font-size:26px; border-radius:5px; box-shadow:0 2px 8px rgba(120,40,30,.35); text-indent:0;
+  width:54px; height:54px; line-height:54px; text-align:center; color:#fff; background:var(--seal);
+  font-size:32px; border-radius:6px; box-shadow:0 3px 10px rgba(120,40,30,.42); text-indent:0;
 }
-.seal .who { text-align:right; line-height:1.35; }
-.seal .who .n { font-size:16px; color:var(--ink); letter-spacing:.08em; }
-.seal .who .r { font-size:11px; color:var(--ink-soft); letter-spacing:.16em; }
+.seal .who { text-align:right; line-height:1.4; }
+.seal .who .n { font-size:18px; color:var(--ink); letter-spacing:.08em; }
+.seal .who .r { font-size:12px; color:var(--ink-soft); letter-spacing:.16em; }
 
 /* ===== 關於 button + panel ===== */
 #aboutBtn {

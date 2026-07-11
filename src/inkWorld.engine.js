@@ -27,7 +27,8 @@ export function initInkWorld(canvas, root) {
     density: 0.34, // chance a cell holds a feature
     speed: 5.0, // base forward speed (u/s) — never fully stops
     turn: 1.5, // rad/s keyboard turn rate
-    dragTurn: 0.003, // rad per px of drag — direct 1:1, no momentum
+    orbitSens: 0.006, // rad per px — drag orbits the camera around the traveler
+    liftSens: 0.02, // units per px — drag Y raises / lowers the camera
     camDist: 9.2,
     camHeight: 4.3,
     camLook: 1.7,
@@ -384,16 +385,11 @@ export function initInkWorld(canvas, root) {
   eye(-1);
   eye(1);
 
-  function arm(side) {
-    const a = BABYLON.MeshBuilder.CreateCylinder("arm", { height: 0.95, diameterTop: 0.12, diameterBottom: 0.16, tessellation: 8 }, scene);
-    a.setPivotPoint(new BABYLON.Vector3(0, 0.45, 0));
-    a.position.set(side * 0.34, 1.9, 0);
-    a.parent = body;
-    a.material = inkMat(C.ink1);
-    return a;
-  }
-  const armL = arm(-1),
-    armR = arm(1);
+  // 斗笠 — conical bamboo hat; brim sits above the eyes so the face still shows from the front
+  const hat = BABYLON.MeshBuilder.CreateCylinder("hat", { height: 0.42, diameterTop: 0.05, diameterBottom: 1.16, tessellation: 26 }, scene);
+  hat.position.y = 2.55;
+  hat.parent = body;
+  hat.material = inkMat(C.ink0);
 
   function leg(side) {
     const l = BABYLON.MeshBuilder.CreateCylinder("leg", { height: 0.9, diameterTop: 0.15, diameterBottom: 0.12, tessellation: 8 }, scene);
@@ -569,7 +565,11 @@ export function initInkWorld(canvas, root) {
     control: false,
     dragging: false,
     lastX: 0,
-    dragDelta: 0,
+    lastY: 0,
+    dragX: 0,
+    dragY: 0,
+    camYaw: 0, // camera orbit offset around the traveler (drag X)
+    camLift: 0, // camera height offset (drag Y)
   };
   const keys = {};
   const onKeyDown = (e) => {
@@ -586,12 +586,15 @@ export function initInkWorld(canvas, root) {
     if (!state.control) return;
     state.dragging = true;
     state.lastX = e.clientX;
+    state.lastY = e.clientY;
     canvas.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e) => {
     if (!state.dragging) return;
-    state.dragDelta += e.clientX - state.lastX; // accumulate px moved since last frame
+    state.dragX += e.clientX - state.lastX; // drag → orbit the camera around the traveler
+    state.dragY += e.clientY - state.lastY;
     state.lastX = e.clientX;
+    state.lastY = e.clientY;
   };
   const endDrag = () => {
     state.dragging = false;
@@ -626,15 +629,17 @@ export function initInkWorld(canvas, root) {
       scene.fogDensity += (CFG.fog - scene.fogDensity) * 0.02;
     }
 
-    // --- steering ---
+    // --- steering: A/D ← → turn the traveler; drag orbits the camera ---
     if (state.control) {
       let turn = 0;
       if (keys.ArrowLeft || keys.KeyA) turn -= 1;
       if (keys.ArrowRight || keys.KeyD) turn += 1;
       state.heading += turn * CFG.turn * dt;
-      // direct, proportional drag steering (1:1, no inertia → no drift/overshoot)
-      state.heading += state.dragDelta * CFG.dragTurn;
-      state.dragDelta = 0;
+      // drag → orbit the camera around the traveler (person-centered), no steering
+      state.camYaw += state.dragX * CFG.orbitSens;
+      state.camLift = Math.min(6, Math.max(-2.5, state.camLift - state.dragY * CFG.liftSens));
+      state.dragX = 0;
+      state.dragY = 0;
       let sp = CFG.speed;
       if (keys.ArrowUp || keys.KeyW) sp = CFG.speed * 1.7;
       if (keys.ArrowDown || keys.KeyS) sp = CFG.speed * 0.45;
@@ -659,8 +664,6 @@ export function initInkWorld(canvas, root) {
     body.position.y = Math.abs(sw2) * 0.06;
     body.rotation.z = sw * 0.03;
     body.rotation.x = 0.06;
-    armL.rotation.x = sw * 0.5;
-    armR.rotation.x = -sw * 0.5;
     legL.rotation.x = -sw * 0.55;
     legR.rotation.x = sw * 0.55;
     robe.rotation.z = sw * 0.05;
@@ -691,16 +694,19 @@ export function initInkWorld(canvas, root) {
       bd.m.scaling.setAll(1 + Math.sin(bd.t * 8) * 0.15);
     });
 
-    // --- camera follow / cinematic ---
+    // --- camera: orbits around the traveler (drag), eases in during 入世 ---
     const introEase = easeInOut(introK);
     const dist = 13 - (13 - CFG.camDist) * introEase;
-    const hgt = 7 - (7 - CFG.camHeight) * introEase;
-    const desired = new BABYLON.Vector3(state.px - fwd.x * dist, hgt, state.pz - fwd.z * dist);
-    const lerp = state.control ? 0.06 : 0.05;
+    const hgt = 7 - (7 - CFG.camHeight) * introEase + state.camLift * introEase;
+    const orbit = state.heading + Math.PI + state.camYaw; // 0 offset = directly behind
+    const ox = Math.sin(orbit),
+      oz = Math.cos(orbit);
+    const desired = new BABYLON.Vector3(state.px + ox * dist, hgt, state.pz + oz * dist);
+    const lerp = state.control ? 0.08 : 0.05;
     camera.position.x += (desired.x - camera.position.x) * lerp;
     camera.position.y += (desired.y - camera.position.y) * lerp;
     camera.position.z += (desired.z - camera.position.z) * lerp;
-    camTarget.set(state.px + fwd.x * 2, CFG.camLook + (1 - introEase) * 0.7, state.pz + fwd.z * 2);
+    camTarget.set(state.px, CFG.camLook + (1 - introEase) * 0.9, state.pz);
     camera.setTarget(camTarget);
   });
 

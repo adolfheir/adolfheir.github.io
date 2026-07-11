@@ -29,7 +29,7 @@ export default function InkWorld() {
       <div id="skip">跳過 →</div>
 
       <div className="hud">
-        自動前行 · 永無盡頭　　<b>← →</b> / <b>A D</b> 轉向　·　拖動屏幕轉向　·　<b>W</b> 疾行 <b>S</b> 緩步
+        自動前行 · 永無盡頭　　<b>拖拽</b> 轉視角　·　<b>A D</b> / <b>← →</b> 轉向　·　<b>W</b> 疾行 <b>S</b> 緩步
       </div>
 
       <button id="aboutBtn">關於</button>
