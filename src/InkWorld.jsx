@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { initInkWorld } from "./inkWorld.engine.js";
+import { initInkMusic } from "./inkMusic.js";
 import "./inkWorld.css";
 
 /**
@@ -12,8 +13,21 @@ export default function InkWorld() {
   const rootRef = useRef(null);
 
   useEffect(() => {
-    const dispose = initInkWorld(canvasRef.current, rootRef.current);
-    return dispose;
+    const world = initInkWorld(canvasRef.current, rootRef.current);
+    const music = initInkMusic(rootRef.current, { getState: world.getState });
+
+    // 時辰 readout follows the day–night cycle
+    const hourEl = rootRef.current.querySelector("#hour .h");
+    const tick = setInterval(() => {
+      const s = world.getState();
+      if (hourEl && s.hour) hourEl.textContent = s.hour;
+    }, 1000);
+
+    return () => {
+      clearInterval(tick);
+      music.dispose();
+      world.dispose();
+    };
   }, []);
 
   return (
@@ -27,6 +41,10 @@ export default function InkWorld() {
       </div>
 
       <div id="skip">跳過 →</div>
+
+      <div id="hour" aria-hidden="true"><span className="h">昼</span></div>
+
+      <button id="soundBtn" type="button" aria-pressed="false">奏樂</button>
 
       <div className="hud">
         自動前行 · 永無盡頭　　<b>拖拽</b> 轉視角　·　<b>A D</b> / <b>← →</b> 轉向　·　<b>W</b> 疾行 <b>S</b> 緩步

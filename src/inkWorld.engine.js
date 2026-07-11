@@ -35,6 +35,33 @@ export function initInkWorld(canvas, root) {
     introDur: 6.2, // seconds of the cinematic before control unlocks
   };
 
+  // ---- 昼夜 day–night cycle — drives paper / fog / celestial + music light ---
+  const DAY = { dur: 240, start: 0.16 }; // seconds per full 晓→昼→暮→夜, opening hour
+  const SKY = [
+    { at: 0.0, paper: "#E7DCC3", light: 0.5, fogMul: 1.45, name: "晓" }, // 拂晓 · 暖雾
+    { at: 0.24, paper: "#F0EBDD", light: 1.0, fogMul: 0.9, name: "昼" }, // 正午 · 明净
+    { at: 0.5, paper: "#E6CDB2", light: 0.55, fogMul: 1.3, name: "暮" }, // 黄昏 · 赭暖
+    { at: 0.74, paper: "#464E62", light: 0.08, fogMul: 1.95, name: "夜" }, // 月夜 · 幽蓝
+  ];
+  const skyC = SKY.map((s) => ({ ...s, col: BABYLON.Color3.FromHexString(s.paper) }));
+  function sampleSky(t) {
+    t = ((t % 1) + 1) % 1;
+    let a = skyC[0], b = skyC[1], k = 0;
+    for (let i = 0; i < skyC.length; i++) {
+      const cur = skyC[i], nxt = skyC[(i + 1) % skyC.length];
+      const hi = nxt.at > cur.at ? nxt.at : nxt.at + 1;
+      const tt = t < cur.at ? t + 1 : t;
+      if (tt >= cur.at && tt < hi) { a = cur; b = nxt; k = (tt - cur.at) / (hi - cur.at); break; }
+    }
+    const e = 0.5 - 0.5 * Math.cos(Math.PI * k); // cosine ease between hours
+    return {
+      col: BABYLON.Color3.Lerp(a.col, b.col, e),
+      light: a.light + (b.light - a.light) * e,
+      fogMul: a.fogMul + (b.fogMul - a.fogMul) * e,
+      name: e < 0.5 ? a.name : b.name,
+    };
+  }
+
   const reduce =
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -553,6 +580,72 @@ export function initInkWorld(canvas, root) {
   }
 
   // =========================================================================
+  //  昼夜 · 日 / 月 / 星 (celestial — follow the traveler, stay forever far)
+  // =========================================================================
+  function discTex(core, glow) {
+    const S = 256, dt = newTex(S, S), ctx = dt.getContext();
+    ctx.clearRect(0, 0, S, S);
+    const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    g.addColorStop(0, core);
+    g.addColorStop(0.16, core);
+    g.addColorStop(0.42, glow);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(S / 2, S / 2, S / 2, 0, 7);
+    ctx.fill();
+    dt.update(true);
+    return dt;
+  }
+  function celestial(core, glow) {
+    const m = BABYLON.MeshBuilder.CreatePlane("cel", { size: 24 }, scene);
+    m.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+    m.material = billboardMat(discTex(core, glow), true); // unlit, fog off
+    m.material.alpha = 0;
+    m.isPickable = false;
+    return m;
+  }
+  const sun = celestial("rgba(255,241,205,1)", "rgba(243,196,110,0.5)");
+  const moon = celestial("rgba(236,240,250,1)", "rgba(150,166,200,0.4)");
+
+  function starDomeTex() {
+    const S = 1024, dt = newTex(S, S), ctx = dt.getContext();
+    ctx.clearRect(0, 0, S, S);
+    for (let i = 0; i < 460; i++) {
+      const x = Math.random() * S, y = Math.random() * S * 0.62; // upper sky only
+      const r = Math.random() * 1.5 + 0.3;
+      ctx.globalAlpha = 0.35 + Math.random() * 0.6;
+      ctx.fillStyle = "#f4f1e6";
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    dt.update(true);
+    return dt;
+  }
+  const stars = BABYLON.MeshBuilder.CreateSphere(
+    "stars",
+    { diameter: 380, segments: 16, sideOrientation: BABYLON.Mesh.BACKSIDE },
+    scene
+  );
+  const starsMat = billboardMat(starDomeTex(), true); // unlit, fog off
+  starsMat.alpha = 0;
+  stars.material = starsMat;
+  stars.isPickable = false;
+
+  // materials tinted toward moonlight after dark (so ink still reads at night)
+  const worldMats = [ridgeMat, birdMat, ...TYPES.flatMap((T) => T.mats)];
+  const worldBase = worldMats.map((m) => m.emissiveColor.clone());
+  const heroMats = [
+    robe.material, torso.material, head.material, hat.material,
+    legL.material, legR.material, staff.material, bundle.material,
+  ];
+  const heroBase = heroMats.map((m) => m.emissiveColor.clone());
+  const MOON_TINT = BABYLON.Color3.FromHexString("#8f98b0"); // far world @ night
+  const HERO_MOON = BABYLON.Color3.FromHexString("#8b93a8"); // 行者 moonlit lift
+
+  // =========================================================================
   //  input — auto-forward always; steer with keys / drag
   // =========================================================================
   const state = {
@@ -570,6 +663,9 @@ export function initInkWorld(canvas, root) {
     dragY: 0,
     camYaw: 0, // camera orbit offset around the traveler (drag X)
     camLift: 0, // camera height offset (drag Y)
+    dayT: DAY.start, // 昼夜相位 0..1
+    light: 1, // 日照 0..1 (music reads this)
+    hour: "昼", // 时辰名 晓/昼/暮/夜
   };
   const keys = {};
   const onKeyDown = (e) => {
@@ -615,18 +711,35 @@ export function initInkWorld(canvas, root) {
     const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
     state.t += dt;
 
+    // --- 昼夜 day–night: paper / fog / far-world tint / 行者 moonlift ---
+    state.dayT = (DAY.start + state.t / DAY.dur) % 1;
+    const sky = sampleSky(state.dayT);
+    state.light = sky.light;
+    state.hour = sky.name;
+    scene.clearColor.set(sky.col.r, sky.col.g, sky.col.b, 1);
+    scene.fogColor.copyFrom(sky.col);
+    const night = Math.min(1, Math.max(0, (0.6 - sky.light) / 0.5)); // 0 day .. 1 deep night
+    const dayFog = CFG.fog * sky.fogMul;
+    for (let i = 0; i < worldMats.length; i++)
+      BABYLON.Color3.LerpToRef(worldBase[i], MOON_TINT, night * 0.6, worldMats[i].emissiveColor);
+    for (let i = 0; i < heroMats.length; i++)
+      BABYLON.Color3.LerpToRef(heroBase[i], HERO_MOON, night * 0.62, heroMats[i].emissiveColor);
+    starsMat.alpha = night * 0.9;
+    stars.position.set(state.px, 20, state.pz);
+    stars.rotation.y += dt * 0.004;
+
     // --- intro cinematic (入世) ---
     let introK = 1;
     if (!state.control) {
       const p = Math.min(state.t / CFG.introDur, 1);
       introK = p;
-      scene.fogDensity = CFG.fogIntro + (CFG.fog - CFG.fogIntro) * easeInOut(Math.min(p * 1.2, 1));
+      scene.fogDensity = CFG.fogIntro + (dayFog - CFG.fogIntro) * easeInOut(Math.min(p * 1.2, 1));
       if (p >= 1) {
         state.control = true;
         root.classList.add("live");
       }
     } else {
-      scene.fogDensity += (CFG.fog - scene.fogDensity) * 0.02;
+      scene.fogDensity += (dayFog - scene.fogDensity) * 0.02;
     }
 
     // --- steering: A/D ← → turn the traveler; drag orbits the camera ---
@@ -672,6 +785,23 @@ export function initInkWorld(canvas, root) {
     // --- far mountains follow (stay distant) ---
     ridge.position.x = state.px;
     ridge.position.z = state.pz;
+
+    // --- 日月 ride a fixed E–W arc; sun up over [0,.5], moon opposite ---
+    {
+      const R = 150, AZ = 0.7, ax = Math.sin(AZ), az = Math.cos(AZ);
+      const sp = state.dayT / 0.5;
+      const eSun = Math.sin(Math.PI * sp), xSun = Math.cos(Math.PI * sp);
+      const sa = Math.max(0, Math.min(1, eSun * 2.2));
+      sun.setEnabled(sa > 0.01);
+      sun.material.alpha = sa;
+      sun.position.set(state.px + ax * xSun * R, 8 + eSun * 122, state.pz + az * xSun * R);
+      const mp = ((state.dayT + 0.5) % 1) / 0.5;
+      const eMoon = Math.sin(Math.PI * mp), xMoon = Math.cos(Math.PI * mp);
+      const ma = Math.max(0, Math.min(1, eMoon * 2.2)) * Math.min(1, night + 0.25);
+      moon.setEnabled(ma > 0.01);
+      moon.material.alpha = ma;
+      moon.position.set(state.px + ax * xMoon * R, 8 + eMoon * 122, state.pz + az * xMoon * R);
+    }
 
     // --- endless world ---
     updateWorld(state.px, state.pz);
@@ -748,7 +878,7 @@ export function initInkWorld(canvas, root) {
   // =========================================================================
   //  dispose — tear everything down on unmount
   // =========================================================================
-  return function dispose() {
+  const dispose = function () {
     timers.forEach(clearTimeout);
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("keyup", onKeyUp);
@@ -764,4 +894,18 @@ export function initInkWorld(canvas, root) {
     scene.dispose();
     engine.dispose();
   };
+
+  // live handle for the generative score (音画联动) + 時辰 readout
+  const getState = () => ({
+    speed: state.speed,
+    baseSpeed: CFG.speed,
+    control: state.control,
+    t: state.t,
+    introDur: CFG.introDur,
+    dayT: state.dayT,
+    light: state.light,
+    hour: state.hour,
+  });
+
+  return { dispose, getState };
 }

@@ -80,6 +80,26 @@
 #skip:hover { color:var(--ink); }
 #skip.gone { opacity:0; pointer-events:none; }
 
+/* ===== 奏樂 sound toggle (bottom-left) ===== */
+#soundBtn {
+  position:absolute; left:28px; bottom:30px; z-index:12; cursor:pointer; user-select:none;
+  background:rgba(236,231,217,.4); border:1px solid rgba(75,71,60,.32); color:var(--ink);
+  font-family:inherit; font-size:15px; letter-spacing:.28em; text-indent:.28em;
+  padding:8px 16px; border-radius:4px; backdrop-filter:blur(3px);
+  opacity:0; transition:opacity 1s ease 1.2s, background .2s, border-color .2s, color .2s;
+}
+#ink-world.live #soundBtn { opacity:1; }
+#soundBtn:hover { background:rgba(75,71,60,.08); border-color:rgba(75,71,60,.6); }
+#soundBtn[aria-pressed="false"] { color:var(--ink-soft); }
+
+/* ===== 時辰 indicator (top-center) — follows the day–night cycle ===== */
+#hour {
+  position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:11;
+  color:var(--ink-soft); font-size:22px; letter-spacing:.1em; user-select:none;
+  opacity:0; transition:opacity 1s ease 1.3s;
+}
+#ink-world.live #hour { opacity:.85; }
+
 /* ===== 落款 seal (identity) ===== */
 .seal {
   position:absolute; right:28px; bottom:26px; z-index:12; display:flex; align-items:center; gap:14px;
